@@ -13,7 +13,7 @@ namespace SearchService.Models
         [JsonPropertyName("content")]
         public required string Content { get; set; }
 
-        [JsonPropertyName("tags")]
+        [JsonPropertyName("tags")]       
         public string[] Tags { get; set; } = [];
 
         [JsonPropertyName("createdAt")]
