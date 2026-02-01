@@ -1,5 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using QuestionService.Data;
+using QuestionService.Services;
+using Wolverine;
+using Wolverine.RabbitMQ;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +14,10 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.AddServiceDefaults();
+
+builder.Services.AddMemoryCache();
+
+builder.Services.AddScoped<TagService>();
 
 builder.Services.AddAuthentication().AddKeycloakJwtBearer(serviceName: "keycloak", realm: "overflow", options =>
     {
@@ -20,6 +29,27 @@ builder.Services.AddAuthentication().AddKeycloakJwtBearer(serviceName: "keycloak
 );
 
 builder.AddNpgsqlDbContext<QuestionService.Data.QuestionDbContext>("questionDb");
+
+builder.Services.AddOpenTelemetry().WithTracing(traceBuilderProvider  =>
+{
+    traceBuilderProvider.SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService(builder.Environment.ApplicationName))
+        .AddSource("Wolverine");        
+});
+
+var conn = builder.Configuration["Wolverine:RabbitMq:messaging:ConnectionString"];
+Console.WriteLine(conn ?? "NOT FOUND");
+
+
+builder.Host.UseWolverine(opts =>
+{
+    opts.UseRabbitMqUsingNamedConnection("messaging")
+    //opts.UseRabbitMq("amqp://guest:guest@host:5672/")
+    .AutoProvision();
+    opts.PublishAllMessages().ToRabbitExchange("questions");
+
+}); 
+
 
 var app = builder.Build();
 

@@ -1,11 +1,15 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Contracts;
+using FastExpressionCompiler;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuestionService.Data;
 using QuestionService.DTOs;
 using QuestionService.Models;
+using QuestionService.Services;
 using System.Security.Claims;
+using Wolverine;
 
 namespace QuestionService.Controllers
 {
@@ -15,33 +19,36 @@ namespace QuestionService.Controllers
     public class QuestionsController : ControllerBase
     {
         private readonly QuestionDbContext _db;
+        private readonly IMessageBus _bus;
+        private readonly TagService _tagService;    
 
-        public QuestionsController(QuestionDbContext db)
+        public QuestionsController(QuestionDbContext db, IMessageBus bus, TagService tagService )
         {
             _db = db;
+            _bus = bus;
+            _tagService = tagService;
         }
 
         [HttpPost]
         [Authorize]
-        public async Task<ActionResult<Question>> CreateQuestion(CreateQuestionDto dto)
+        public async Task<ActionResult<Question>> CreateQuestion(CreateQuestionDto dto )
         {
-            var validTags = await _db.Tags.Where(t => dto.Tags.Contains(t.Slug)).Select(t => t.Slug).ToListAsync();
-
-            var missing = dto.Tags.Except(validTags).ToList();
-
-            if (missing.Count != 0)
-            {
-                return BadRequest($"The following tags are invalid: {string.Join(", ", missing)}");
-            }
-
-            // Placeholder implementation
+            //// Placeholder implementation
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-            if (missing.Any())
-            {
-                return BadRequest($"The following tags are invalid: {string.Join(", ", missing)}");
-            }
+            //var validTags = await _db.Tags.Where(t => dto.Tags.Contains(t.Slug)).Select(t => t.Slug).ToListAsync();
 
+            //var missing = dto.Tags.Except(validTags).ToList();
+
+            //if (missing.Count != 0)
+            //{
+            //    return BadRequest($"The following tags are invalid: {string.Join(", ", missing)}");
+            //}
+
+            if (!await _tagService.AreTagsValidAsync(dto.Tags))
+            {
+                return BadRequest("Invalid Tags");
+            }
 
             var name = User.FindFirstValue("name");
 
@@ -64,7 +71,10 @@ namespace QuestionService.Controllers
             };
 
             _db.Questions.Add(question);
+
             await _db.SaveChangesAsync();
+
+            await _bus.PublishAsync(new QuestionCreated( question.Id, question.Title, question.Content, question.CreatedAt, question.TagSlugs));
 
             return Created($"/questions/{question.Id}", question);
         }
@@ -104,10 +114,12 @@ namespace QuestionService.Controllers
         public async Task<ActionResult<Question>> UpdateQuestion(string id, CreateQuestionDto dto)
         {
             var question = await _db.Questions.FindAsync(id);
+
             if (question == null)
             {
                 return NotFound();
             }
+
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
             if (question.AskerId != userId)
@@ -115,13 +127,18 @@ namespace QuestionService.Controllers
                 return Forbid();
             }
 
-            var validTags = await _db.Tags.Where(t => dto.Tags.Contains(t.Slug)).Select(t => t.Slug).ToListAsync();
+            //var validTags = await _db.Tags.Where(t => dto.Tags.Contains(t.Slug)).Select(t => t.Slug).ToListAsync();
 
-            var missing = dto.Tags.Except(validTags).ToList();
+            //var missing = dto.Tags.Except(validTags).ToList();
 
-            if (missing.Count != 0)
+            //if (missing.Count != 0)
+            //{
+            //    return BadRequest($"The following tags are invalid: {string.Join(", ", missing)}");
+            //}
+
+            if (!await _tagService.AreTagsValidAsync(dto.Tags))
             {
-                return BadRequest($"The following tags are invalid: {string.Join(", ", missing)}");
+                return BadRequest("Invalid Tags");
             }
 
             question.Title = dto.Title;
@@ -130,6 +147,9 @@ namespace QuestionService.Controllers
             question.TagSlugs = dto.Tags;
 
             await _db.SaveChangesAsync();
+
+            // he has AsArray 
+            await _bus.PublishAsync(new QuestionUpdated(question.Id, question.Title, question.Content, question.TagSlugs.ToList()  ));
 
             return NoContent();
         }
@@ -155,6 +175,8 @@ namespace QuestionService.Controllers
             _db.Questions.Remove(question);
 
             await _db.SaveChangesAsync();
+
+            await _bus.PublishAsync(new QuestionDeleted(question.Id)); 
 
             return NoContent();
         }   
