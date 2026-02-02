@@ -41,6 +41,12 @@ var conn = builder.Configuration["Wolverine:RabbitMq:messaging:ConnectionString"
 Console.WriteLine(conn ?? "NOT FOUND");
 
 
+
+
+
+
+
+
 builder.Host.UseWolverine(opts =>
 {
     opts.UseRabbitMqUsingNamedConnection("messaging")
